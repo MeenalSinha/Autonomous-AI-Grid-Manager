@@ -10,7 +10,7 @@ import torch.optim as optim
 from collections import deque
 import random
 from typing import Tuple
-from grid_simulator import GridState
+from .grid_simulator import GridState
 
 class PolicyNetwork(nn.Module):
     """Actor network for PPO - Gaussian policy for continuous actions"""
