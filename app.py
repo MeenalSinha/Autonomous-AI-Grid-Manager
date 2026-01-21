@@ -424,8 +424,189 @@ def display_realtime_graphs(simulator, history, ai_enabled):
     
     st.plotly_chart(fig, use_container_width=True)
 
-# Note: Other helper functions (display_comparison_charts, display_decision_log, 
-# display_statistics_summary) are defined at the end of the file where they're used
+def display_comparison_charts(history):
+    """Display side-by-side comparison charts"""
+    if len(history['ai']['time']) < 2 or len(history['rule']['time']) < 2:
+        st.info("⏳ Waiting for comparison data...")
+        return
+    
+    # Calculate metrics for both
+    ai_stability = np.mean([s.stability_score for s in history['ai']['states'][-100:]])
+    rule_stability = np.mean([s.stability_score for s in history['rule']['states'][-100:]])
+    
+    ai_cost = np.mean([s.energy_cost for s in history['ai']['states'][-100:]])
+    rule_cost = np.mean([s.energy_cost for s in history['rule']['states'][-100:]])
+    
+    ai_outages = sum([1 for s in history['ai']['states'] if s.stability_score < 0.7])
+    rule_outages = sum([1 for s in history['rule']['states'] if s.stability_score < 0.7])
+    
+    ai_renewable = np.mean([(s.solar_generation + s.wind_generation) / max(s.load_demand, 1) * 100 
+                            for s in history['ai']['states'][-100:]])
+    rule_renewable = np.mean([(s.solar_generation + s.wind_generation) / max(s.load_demand, 1) * 100 
+                              for s in history['rule']['states'][-100:]])
+    
+    # Comparison bar chart
+    fig = go.Figure()
+    
+    metrics = ['Stability (%)', 'Cost (₹)', 'Outages', 'Renewable (%)']
+    ai_values = [ai_stability * 100, ai_cost, ai_outages, ai_renewable]
+    rule_values = [rule_stability * 100, rule_cost, rule_outages, rule_renewable]
+    
+    fig.add_trace(go.Bar(name='AI Control', x=metrics, y=ai_values, marker_color='#1f77b4'))
+    fig.add_trace(go.Bar(name='Rule-Based', x=metrics, y=rule_values, marker_color='#ff7f0e'))
+    
+    fig.update_layout(title='Performance Comparison: AI vs Rule-Based',
+                     barmode='group', height=400)
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Improvement metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        improvement = (ai_stability - rule_stability) / rule_stability * 100
+        st.metric("Stability Improvement", f"{improvement:+.1f}%")
+    
+    with col2:
+        cost_saving = (rule_cost - ai_cost) / rule_cost * 100
+        st.metric("Cost Savings", f"{cost_saving:+.1f}%")
+    
+    with col3:
+        outage_reduction = (rule_outages - ai_outages) / max(rule_outages, 1) * 100
+        st.metric("Outage Reduction", f"{outage_reduction:+.1f}%")
+    
+    with col4:
+        renewable_improvement = (ai_renewable - rule_renewable) / rule_renewable * 100
+        st.metric("Renewable Increase", f"{renewable_improvement:+.1f}%")
+
+def display_decision_log(simulator, history):
+    """Display AI decision explanations"""
+    st.subheader("🧠 AI Decision Log")
+    
+    if len(history['actions']) < 1:
+        st.info("No decisions yet...")
+        return
+    
+    # Get last few actions
+    recent_actions = history['actions'][-5:]
+    recent_states = history['states'][-5:]
+    recent_rewards = history['rewards'][-5:]
+    
+    for i, (action, state, reward) in enumerate(zip(recent_actions, recent_states, recent_rewards)):
+        with st.expander(f"Step {len(history['actions']) - 5 + i}: Reward = {reward:.2f}"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**State:**")
+                st.write(f"- Solar: {state.solar_generation:.1f} kW")
+                st.write(f"- Wind: {state.wind_generation:.1f} kW")
+                st.write(f"- Load: {state.load_demand:.1f} kW")
+                st.write(f"- Battery SOC: {state.battery_soc:.1%}")
+                st.write(f"- Stability: {state.stability_score:.1%}")
+            
+            with col2:
+                st.markdown("**Action Taken:**")
+                st.write(f"- Battery Charge: {action[0]:.2f}")
+                st.write(f"- Battery Discharge: {action[1]:.2f}")
+                st.write(f"- Load Shift: {action[2]:.2f}")
+                st.write(f"- Grid Import: {action[3]:.2f}")
+                st.write(f"- Curtailment: {action[4]:.2f}")
+                
+                # Explanation
+                st.markdown("**Why:**")
+                if state.battery_soc < 0.3 and action[0] > 0.5:
+                    st.write("✅ Charging battery due to low SOC")
+                if state.load_demand > state.solar_generation + state.wind_generation and action[1] > 0.5:
+                    st.write("✅ Discharging battery to meet demand")
+                if state.stability_score < 0.8 and action[2] > 0.3:
+                    st.write("✅ Shifting non-critical loads for stability")
+                if reward > 0:
+                    st.success(f"✅ Positive reward: {reward:.2f}")
+                else:
+                    st.warning(f"⚠️ Negative reward: {reward:.2f}")
+
+def display_statistics_summary(simulator, history, ai_enabled):
+    """Display comprehensive statistics with glassmorphism cards"""
+    st.markdown("""
+        <div class="glass-card">
+            <h2 style="color: #2C5F2D !important; text-align: center;">📊 Grid Performance Statistics</h2>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    mode = 'ai' if ai_enabled else 'rule'
+    
+    if len(history[mode]['states']) < 10:
+        st.info("⏳ Accumulating statistics...")
+        return
+    
+    states = history[mode]['states']
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown("""
+        <div class="metric-glass-card">
+            <h4 style="color: white !important;">⚡ Reliability</h4>
+        """, unsafe_allow_html=True)
+        
+        avg_stability = np.mean([s.stability_score for s in states]) * 100
+        min_stability = np.min([s.stability_score for s in states]) * 100
+        outages = sum([1 for s in states if s.stability_score < 0.7])
+        uptime = (1 - outages / len(states)) * 100
+        
+        st.markdown(f"""
+            <div class="metric-value">{avg_stability:.1f}%</div>
+            <div class="metric-label">Avg Stability</div>
+            <p style="color: white; margin: 1rem 0;">Uptime: {uptime:.1f}%</p>
+            <p style="color: white; opacity: 0.8;">Min: {min_stability:.1f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="metric-glass-card">
+            <h4 style="color: white !important;">💰 Economics</h4>
+        """, unsafe_allow_html=True)
+        
+        avg_cost = np.mean([s.energy_cost for s in states])
+        total_cost = np.sum([s.energy_cost for s in states])
+        
+        st.markdown(f"""
+            <div class="metric-value">₹{avg_cost:.2f}</div>
+            <div class="metric-label">Avg Cost/Step</div>
+            <p style="color: white; margin: 1rem 0;">Total: ₹{total_cost:.2f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="metric-glass-card">
+            <h4 style="color: white !important;">🌱 Sustainability</h4>
+        """, unsafe_allow_html=True)
+        
+        avg_renewable = np.mean([(s.solar_generation + s.wind_generation) / max(s.load_demand, 1) * 100 
+                                 for s in states])
+        
+        st.markdown(f"""
+            <div class="metric-value">{avg_renewable:.1f}%</div>
+            <div class="metric-label">Renewable Use</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown("""
+        <div class="metric-glass-card">
+            <h4 style="color: white !important;">📉 Outages</h4>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+            <div class="metric-value">{outages}</div>
+            <div class="metric-label">Total Outages</div>
+            <p style="color: white; margin: 1rem 0;">Rate: {outage_pct:.1f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ============================================================================
 # Session State Initialization
@@ -989,7 +1170,7 @@ else:
 st.divider()
 display_statistics_summary(st.session_state.simulator, st.session_state.history, st.session_state.ai_enabled)
 
-# Helper Functions
+# Footer
 def display_metrics(simulator, history, mode):
     """Display key metrics for a simulator"""
     state = simulator.state
