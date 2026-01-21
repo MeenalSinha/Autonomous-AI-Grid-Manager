@@ -323,6 +323,114 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def display_metrics(simulator, history, mode):
+    """Display current metrics in cards"""
+    state = simulator.state
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Grid Stability", f"{state.stability_score * 100:.1f}%",
+                 delta=f"{(state.stability_score - 0.9) * 100:.1f}%")
+    
+    with col2:
+        st.metric("Battery SOC", f"{state.battery_soc * 100:.1f}%",
+                 delta=f"{(state.battery_soc - 0.5) * 100:.1f}%")
+    
+    with col3:
+        renewable_pct = (state.solar_generation + state.wind_generation) / max(state.load_demand, 1) * 100
+        st.metric("Renewable Use", f"{renewable_pct:.1f}%")
+    
+    with col4:
+        outages = sum([1 for s in history[mode]['states'] if s.stability_score < 0.7]) if history[mode]['states'] else 0
+        st.metric("Outages", f"{outages}")
+
+def display_realtime_graphs(simulator, history, ai_enabled):
+    """Display real-time monitoring graphs"""
+    mode = 'ai' if ai_enabled else 'rule'
+    
+    if len(history[mode]['time']) < 2:
+        st.info("⏳ Waiting for simulation data...")
+        return
+    
+    times = history[mode]['time']
+    states = history[mode]['states']
+    
+    # Extract time series data
+    solar = [s.solar_generation for s in states]
+    wind = [s.wind_generation for s in states]
+    load = [s.load_demand for s in states]
+    battery_soc = [s.battery_soc * 100 for s in states]
+    stability = [s.stability_score * 100 for s in states]
+    grid_import = [s.grid_import for s in states]
+    
+    # Create subplots
+    fig = make_subplots(
+        rows=3, cols=2,
+        subplot_titles=('Generation & Demand', 'Battery State of Charge',
+                       'Grid Stability', 'Grid Import/Export',
+                       'Renewable Utilization', 'Frequency Deviation'),
+        vertical_spacing=0.12,
+        horizontal_spacing=0.1
+    )
+    
+    # Generation & Demand
+    fig.add_trace(go.Scatter(x=times, y=solar, name='Solar', line=dict(color='#ffa500')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=times, y=wind, name='Wind', line=dict(color='#4682b4')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=times, y=load, name='Load', line=dict(color='#dc143c', dash='dash')), row=1, col=1)
+    
+    # Battery SOC
+    fig.add_trace(go.Scatter(x=times, y=battery_soc, name='Battery SOC', 
+                            fill='tozeroy', line=dict(color='#32cd32')), row=1, col=2)
+    fig.add_hline(y=20, line_dash="dot", line_color="red", row=1, col=2)
+    fig.add_hline(y=80, line_dash="dot", line_color="orange", row=1, col=2)
+    
+    # Grid Stability
+    fig.add_trace(go.Scatter(x=times, y=stability, name='Stability',
+                            fill='tozeroy', line=dict(color='#1f77b4')), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
+    fig.add_hline(y=95, line_dash="dot", line_color="green", row=2, col=1)
+    
+    # Grid Import/Export
+    fig.add_trace(go.Scatter(x=times, y=grid_import, name='Grid Import',
+                            fill='tozeroy', line=dict(color='#ff6b6b')), row=2, col=2)
+    
+    # Renewable Utilization
+    renewable_pct = [(s.solar_generation + s.wind_generation) / max(s.load_demand, 1) * 100 for s in states]
+    fig.add_trace(go.Scatter(x=times, y=renewable_pct, name='Renewable %',
+                            fill='tozeroy', line=dict(color='#2ecc71')), row=3, col=1)
+    
+    # Frequency Deviation
+    freq_dev = [s.grid_frequency - 50.0 for s in states]
+    fig.add_trace(go.Scatter(x=times, y=freq_dev, name='Freq Deviation',
+                            line=dict(color='#9b59b6')), row=3, col=2)
+    fig.add_hline(y=0, line_dash="solid", line_color="gray", row=3, col=2)
+    
+    # Update layout
+    fig.update_xaxes(title_text="Time Step", row=3, col=1)
+    fig.update_xaxes(title_text="Time Step", row=3, col=2)
+    fig.update_yaxes(title_text="kW", row=1, col=1)
+    fig.update_yaxes(title_text="%", row=1, col=2)
+    fig.update_yaxes(title_text="%", row=2, col=1)
+    fig.update_yaxes(title_text="kW", row=2, col=2)
+    fig.update_yaxes(title_text="%", row=3, col=1)
+    fig.update_yaxes(title_text="Hz", row=3, col=2)
+    
+    fig.update_layout(height=800, showlegend=True, title_text="Real-Time Grid Monitoring")
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+# Note: Other helper functions (display_comparison_charts, display_decision_log, 
+# display_statistics_summary) are defined at the end of the file where they're used
+
+# ============================================================================
+# Session State Initialization
+# ============================================================================
+
 # Initialize session state
 if 'simulator' not in st.session_state:
     st.session_state.simulator = MicrogridDigitalTwin()
