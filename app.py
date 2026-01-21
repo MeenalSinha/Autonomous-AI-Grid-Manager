@@ -613,7 +613,6 @@ if st.session_state.comparison_mode:
             st.session_state.simulation_running = False
             st.warning(f"⚠️ Simulation reached maximum steps ({st.session_state.max_steps}). Click Reset to continue.")
         else:
-        else:
             # Update forecaster for AI simulator
             st.session_state.forecaster.update_history(
                 st.session_state.simulator.state.time_of_day,
@@ -720,9 +719,8 @@ else:
         if st.session_state.current_step >= st.session_state.max_steps:
             st.session_state.simulation_running = False
             st.warning(f"⚠️ Simulation reached maximum steps ({st.session_state.max_steps}). Click Reset to continue.")
-            return
-        
-        state_vec = st.session_state.simulator.get_state_vector()
+        else:
+            state_vec = st.session_state.simulator.get_state_vector()
         
         # Update forecaster with current observations
         st.session_state.forecaster.update_history(
@@ -750,9 +748,9 @@ else:
         if st.session_state.ai_enabled and st.session_state.training_complete:
             action = st.session_state.rl_agent.select_action(state_vec)
         elif st.session_state.ai_enabled:
-            action = st.session_state.legacy_controller.get_action(state)
+            action = st.session_state.legacy_controller.get_action(st.session_state.simulator.state)
         else:
-            action = st.session_state.legacy_controller.get_action(state)
+            action = st.session_state.legacy_controller.get_action(st.session_state.simulator.state)
         
         next_state, reward, done = st.session_state.simulator.step(action)
         
@@ -760,7 +758,7 @@ else:
         current_time = st.session_state.current_step
         mode = 'ai' if st.session_state.ai_enabled else 'rule'
         st.session_state.history[mode]['time'].append(current_time)
-        st.session_state.history[mode]['states'].append(state)
+        st.session_state.history[mode]['states'].append(st.session_state.simulator.state)
         st.session_state.history[mode]['actions'].append(action)
         st.session_state.history[mode]['rewards'].append(reward)
         
