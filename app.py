@@ -543,6 +543,10 @@ def display_statistics_summary(simulator, history, ai_enabled):
     
     states = history[mode]['states']
     
+    # Calculate metrics that will be used across columns
+    outages = sum([1 for s in states if s.stability_score < 0.7])
+    outage_pct = (outages / len(states)) * 100
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -553,7 +557,6 @@ def display_statistics_summary(simulator, history, ai_enabled):
         
         avg_stability = np.mean([s.stability_score for s in states]) * 100
         min_stability = np.min([s.stability_score for s in states]) * 100
-        outages = sum([1 for s in states if s.stability_score < 0.7])
         uptime = (1 - outages / len(states)) * 100
         
         st.markdown(f"""
